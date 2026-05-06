@@ -53,10 +53,10 @@ command_exists() { command -v "$1" &>/dev/null; }
 prompt_secret() {
   local label="$1"
   local hint="${2:-}"
-  [[ -n "$hint" ]] && echo -e "    ${GRAY}$hint${RESET}"
+  [[ -n "$hint" ]] && echo -e "    ${GRAY}$hint${RESET}" >&2
   local val
   read -s -r -p "    Enter $label: " val
-  echo ""
+  echo "" >&2
   echo "$val"
 }
 
@@ -429,21 +429,18 @@ else
   echo -e "  ${WHITE}[OpenAI]     platform.openai.com > API Keys  (optional -- or log in via opencode UI)${RESET}"
   OPENAI_KEY=$(prompt_secret "OpenAI API key (sk-...)" "(leave blank to skip)")
 
-  # Build auth.json from non-empty keys
-  AUTH_ENTRIES=""
-  [[ -n "$ANTHROPIC_KEY" ]] && AUTH_ENTRIES+="  \"anthropic\": { \"type\": \"api\", \"key\": \"$ANTHROPIC_KEY\" }"
-  if [[ -n "$GOOGLE_KEY" ]]; then
-    [[ -n "$AUTH_ENTRIES" ]] && AUTH_ENTRIES+=","$'\n'
-    AUTH_ENTRIES+="  \"google\": { \"type\": \"api\", \"key\": \"$GOOGLE_KEY\" }"
-  fi
-  if [[ -n "$OPENAI_KEY" ]]; then
-    [[ -n "$AUTH_ENTRIES" ]] && AUTH_ENTRIES+=","$'\n'
-    AUTH_ENTRIES+="  \"openai\": { \"type\": \"api\", \"key\": \"$OPENAI_KEY\" }"
-  fi
-
-  if [[ -n "$AUTH_ENTRIES" ]]; then
+  if [[ -n "$ANTHROPIC_KEY" || -n "$GOOGLE_KEY" || -n "$OPENAI_KEY" ]]; then
     mkdir -p "$(dirname "$AUTH_JSON_PATH")"
-    printf "{\n%s\n}\n" "$AUTH_ENTRIES" > "$AUTH_JSON_PATH"
+    ANTHROPIC_KEY="$ANTHROPIC_KEY" GOOGLE_KEY="$GOOGLE_KEY" OPENAI_KEY="$OPENAI_KEY" \
+      python3 -c '
+import json, os
+data = {}
+for provider in ("anthropic", "google", "openai"):
+    key = os.environ.get(provider.upper() + "_KEY", "")
+    if key:
+        data[provider] = {"type": "api", "key": key}
+print(json.dumps(data, indent=2))
+' > "$AUTH_JSON_PATH"
     print_ok "auth.json written to $AUTH_JSON_PATH"
   else
     print_warn "No API keys entered. Run opencode and use the built-in auth flow to add providers."
